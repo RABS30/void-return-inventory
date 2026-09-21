@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div id="toast" class="fixed z-50 top-4 right-4 hidden"></div>
+
+  <main class="max-w-6xl mx-auto px-4 py-5 sm:py-6 pb-28 sm:pb-10">
+    <section>
+      <div class="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight">Daftar Void &amp; Return</h1>
+          <p class="text-sm text-slate-500 dark:text-slate-400 mt-1"><span id="totalEntries">0</span> entri · <span id="totalQty">0</span> pcs barang</p>
+        </div>
+        <div class="flex gap-2 w-full sm:w-auto">
+          <button id="btnExportVoid" class="flex-1 sm:flex-none justify-center px-4 py-2.5 rounded-xl text-sm font-semibold bg-violet-100 dark:bg-violet-900 text-violet-800 dark:text-violet-100 hover:bg-violet-200 inline-flex items-center gap-2">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
+              <path d="M12 4v10"/><path d="M8 10.5l4 4 4-4"/><path d="M5 19h14"/>
+            </svg>
+            Ekspor Void
+          </button>
+          <button id="btnExportReturn" class="flex-1 sm:flex-none justify-center px-4 py-2.5 rounded-xl text-sm font-semibold bg-fuchsia-100 dark:bg-fuchsia-900 text-fuchsia-800 dark:text-fuchsia-100 hover:bg-fuchsia-200 inline-flex items-center gap-2">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
+              <path d="M12 4v10"/><path d="M8 10.5l4 4 4-4"/><path d="M5 19h14"/>
+            </svg>
+            Ekspor Return
+          </button>
+          <a href="{% url 'inventory:input' %}" class="hidden sm:inline-block px-4 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-bold hover:bg-brand-700">+ Input</a>
+        </div>
+      </div>
+
+      <!-- Filter -->
+      <div class="grid sm:grid-cols-3 gap-3 mt-5">
+        <div class="relative">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 absolute left-3.5 top-3.5 text-slate-400 pointer-events-none">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+          <input type="text" id="searchInput" placeholder="Cari barcode, nama barang, alasan…" class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3.5 py-3 sm:py-2.5 text-base sm:text-sm focus:ring-2 focus:ring-brand-500 pl-10">
+        </div>
+        <select id="filterJenis" class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3.5 py-3 sm:py-2.5 text-base sm:text-sm focus:ring-2 focus:ring-brand-500">
+          <option value="all">Semua</option>
+          <option value="void">Void saja</option>
+          <option value="return">Return saja</option>
+        </select>
+        <select class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3.5 py-3 sm:py-2.5 text-base sm:text-sm focus:ring-2 focus:ring-brand-500">
+          <option>Semua waktu</option>
+          <option>Hari ini</option>
+          <option>Bulan ini</option>
+        </select>
+      </div>
+
+      <!-- Table -->
+      <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 mt-4 overflow-hidden">
+        <div class="hidden sm:block overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 dark:bg-slate-800/60 text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th class="px-4 py-2.5 text-left font-semibold">Tanggal</th>
+                <th class="px-4 py-2.5 text-left font-semibold">Outlet</th>
+                <th class="px-4 py-2.5 text-left font-semibold">Barang / Barcode</th>
+                <th class="px-4 py-2.5 text-center font-semibold">Qty</th>
+                <th class="px-4 py-2.5 text-left font-semibold">Tipe</th>
+                <th class="px-4 py-2.5 text-left font-semibold">Kasir</th>
+                <th class="px-4 py-2.5 text-left font-semibold">Otoritas</th>
+                <th class="px-4 py-2.5 text-left font-semibold">Alasan</th>
+                <th class="px-4 py-2.5 text-right font-semibold">Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="tableBody">
+              <!-- Data will be inserted here -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Mobile View -->
+        <div class="sm:hidden" id="mobileList">
+          <!-- Data will be inserted here -->
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- FAB Mobile -->
+  <a href="{% url 'inventory:input' %}" class="sm:hidden fixed z-40 bottom-20 right-4 w-14 h-14 rounded-full bg-brand-600 text-white shadow-lg grid place-items-center active:scale-95 transition">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6">
+      <path d="M12 5.5v13M5.5 12h13"/>
+    </svg>
+  </a>
+{% endblock content %}
+
+{% block scripts %}
+  <script src="/static/js/daftar-ready.js"></script>
+{% endblock scripts %}
