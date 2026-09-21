@@ -1,92 +1,24 @@
-// Dummy data transaksi
-const dummyTransactions = [
-  {
-    id: 1,
-    tanggal: '2026-09-21',
-    outlet: 'BT5',
-    barcode: '8992388101010',
-    namaBarang: 'Indomie Goreng 85g',
-    quantity: 2,
-    tipe: 'void',
-    kasir: 'Mawar Melati',
-    otoritas: 'Raflesia Arnoldi',
-    alasan: 'Kasir salah input jumlah'
-  },
-  {
-    id: 2,
-    tanggal: '2026-09-21',
-    outlet: 'BT3',
-    barcode: '8993675610019',
-    namaBarang: 'Aqua Botol 600ml',
-    quantity: 1,
-    tipe: 'return',
-    kasir: 'Tulip ',
-    otoritas: 'Patrick',
-    alasan: 'Kemasan bocor',
-    notrans: 'TRX20260921001',
-    hjual: 4000
-  },
-  {
-    id: 3,
-    tanggal: '2026-09-20',
-    outlet: 'BT7',
-    barcode: '8996001600016',
-    namaBarang: 'Teh Pucuk Harum 350ml',
-    quantity: 3,
-    tipe: 'void',
-    kasir: 'Anggrek',
-    otoritas: 'Gabby',
-    alasan: 'Pembeli batal beli'
-  },
-  {
-    id: 4,
-    tanggal: '2026-09-19',
-    outlet: 'BT12',
-    barcode: '8998866123456',
-    namaBarang: 'Chitato Sapi Panggang 68g',
-    quantity: 1,
-    tipe: 'return',
-    kasir: 'Jasmine',
-    otoritas: 'Enzo',
-    alasan: 'Salah rasa, ditukar',
-    notrans: 'TRX20260919045',
-    hjual: 8500
-  },
-  {
-    id: 5,
-    tanggal: '2026-09-20',
-    outlet: 'BT2',
-    barcode: '8991001234567',
-    namaBarang: 'Mie Sedaap Goreng 85g',
-    quantity: 5,
-    tipe: 'void',
-    kasir: 'Red Rose',
-    otoritas: 'Raul',
-    alasan: 'Sistem error saat transaksi'
-  },
-  {
-    id: 6,
-    tanggal: '2026-09-18',
-    outlet: 'BT15',
-    barcode: '8992761111111',
-    namaBarang: 'Ultra Milk Coklat 200ml',
-    quantity: 2,
-    tipe: 'return',
-    kasir: 'Pablo',
-    otoritas: 'Miguel',
-    alasan: 'Produk mendekati kadaluarsa',
-    notrans: 'TRX20260918012',
-    hjual: 5500
+// API base URL
+const API_BASE = '/api';
+
+let transactions = [];
+
+// Load transactions from server
+async function loadTransactions() {
+  try {
+    const response = await fetch(`${API_BASE}/transactions`);
+    const result = await response.json();
+    
+    if (result.success) {
+      transactions = result.data;
+      updateStats();
+      updateTopProducts();
+      updateRecentEntries();
+    }
+  } catch (error) {
+    console.error('Error loading transactions:', error);
   }
-];
-
-// Load transactions
-function loadTransactions() {
-  const stored = localStorage.getItem('transactions');
-  return stored ? JSON.parse(stored) : dummyTransactions;
 }
-
-const transactions = loadTransactions();
 
 // Calculate statistics
 function calculateStats() {
@@ -210,7 +142,5 @@ function updateRecentEntries() {
   }).join('');
 }
 
-// Initialize
-updateStats();
-updateTopProducts();
-updateRecentEntries();
+// Initialize - Load data from server
+loadTransactions();

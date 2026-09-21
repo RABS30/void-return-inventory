@@ -1,12 +1,5 @@
-// Dummy data barang
-const dummyBarang = {
-  '8992388101010': { nama: 'Indomie Goreng 85g', hjual: 3500 },
-  '8993675610019': { nama: 'Aqua Botol 600ml', hjual: 4000 },
-  '8996001600016': { nama: 'Teh Pucuk Harum 350ml', hjual: 3000 },
-  '8998866123456': { nama: 'Chitato Sapi Panggang 68g', hjual: 8500 },
-  '8991001234567': { nama: 'Mie Sedaap Goreng 85g', hjual: 3200 },
-  '8992761111111': { nama: 'Ultra Milk Coklat 200ml', hjual: 5500 },
-};
+// API base URL
+const API_BASE = '/api';
 
 // Conditional field Void/Return
 document.querySelectorAll('input[name="tipe"]').forEach(radio => {
@@ -39,34 +32,48 @@ document.querySelectorAll('input[name="tipe"]').forEach(radio => {
   });
 });
 
-// Barcode lookup
+// Barcode lookup using API
 const barcodeInput = document.getElementById('barcode');
 const barangInfo = document.getElementById('barangInfo');
 const barangError = document.getElementById('barangError');
 const namaBarang = document.getElementById('namaBarang');
 
-barcodeInput.addEventListener('input', function() {
+let currentBarangData = null;
+
+barcodeInput.addEventListener('input', async function() {
   const barcode = this.value.trim();
   
   if (barcode.length === 0) {
     barangInfo.classList.add('hidden');
     barangError.classList.add('hidden');
+    currentBarangData = null;
     return;
   }
   
-  if (dummyBarang[barcode]) {
-    barangInfo.classList.remove('hidden');
-    barangError.classList.add('hidden');
-    namaBarang.textContent = dummyBarang[barcode].nama;
+  try {
+    const response = await fetch(`${API_BASE}/barcode/${barcode}`);
+    const result = await response.json();
     
-    // Auto-fill H. Jual jika Return
-    const tipeReturn = document.querySelector('input[name="tipe"][value="return"]');
-    if (tipeReturn && tipeReturn.checked) {
-      document.getElementById('hjual').value = dummyBarang[barcode].hjual;
+    if (result.success) {
+      barangInfo.classList.remove('hidden');
+      barangError.classList.add('hidden');
+      namaBarang.textContent = result.data.nama;
+      currentBarangData = result.data;
+      
+      // Auto-fill H. Jual jika Return
+      const tipeReturn = document.querySelector('input[name="tipe"][value="return"]');
+      if (tipeReturn && tipeReturn.checked) {
+        document.getElementById('hjual').value = result.data.hjual;
+      }
+    } else {
+      barangInfo.classList.add('hidden');
+      barangError.classList.remove('hidden');
+      currentBarangData = null;
     }
-  } else {
+  } catch (error) {
     barangInfo.classList.add('hidden');
     barangError.classList.remove('hidden');
+    currentBarangData = null;
   }
 });
 
@@ -91,31 +98,36 @@ fotoInput.addEventListener('change', function(e) {
 const form = document.getElementById('formInput');
 const toast = document.getElementById('toast');
 
-form.addEventListener('submit', function(e) {
+form.addEventListener('submit', async function(e) {
   e.preventDefault();
   
-  // Get form data
-  const formData = {
-    tanggal: document.getElementById('tanggal').value,
-    quantity: document.getElementById('quantity').value,
-    kasir: document.getElementById('kasir').value,
-    otoritas: document.getElementById('otoritas').value,
-    outlet: document.getElementById('outlet').value,
-    barcode: document.getElementById('barcode').value,
-    tipe: document.querySelector('input[name="tipe"]:checked').value,
-    alasan: document.getElementById('alasan').value,
-  };
-  
-  // Validate barcode
-  if (!dummyBarang[formData.barcode]) {
+  // Validate barcode first
+  const barcode = document.getElementById('barcode').value;
+  if (!currentBarangData) {
     showToast('Barcode tidak ditemukan!', 'error');
     return;
   }
   
+  // Get form data
+  const formData = {
+    tanggal: document.getElementById('tanggal').value,
+    quantity: parseInt(document.getElementById('quantity').value),
+    kasir: document.getElementById('kasir').value,
+    otoritas: document.getElementById('otoritas').value,
+    outlet: document.getElementById('outlet').value,
+    barcode: barcode,
+    namaBarang: currentBarangData.nama,
+    tipe: document.querySelector('input[name="tipe"]:checked').value,
+    alasan: document.getElementById('alasan').value,
+    notrans: null,
+    hjual: null,
+    foto: null
+  };
+  
   if (formData.tipe === 'return') {
     formData.notrans = document.getElementById('notrans').value;
-    formData.hjual = document.getElementById('hjual').value;
-    formData.foto = fotoInput.files[0] ? fotoInput.files[0].name : '';
+    formData.hjual = parseFloat(document.getElementById('hjual').value);
+    formData.foto = fotoInput.files[0] ? fotoInput.files[0].name : null;
     
     if (!formData.notrans || !formData.hjual || !formData.foto) {
       showToast('Lengkapi semua field Return!', 'error');
@@ -123,22 +135,31 @@ form.addEventListener('submit', function(e) {
     }
   }
   
-  // Save to localStorage
-  let transactions = JSON.parse(localStorage.getItem('transactions') || '[]');
-  transactions.push({
-    ...formData,
-    id: Date.now(),
-    namaBarang: dummyBarang[formData.barcode].nama,
-    timestamp: new Date().toISOString()
-  });
-  localStorage.setItem('transactions', JSON.stringify(transactions));
-  
-  showToast('Data berhasil disimpan!', 'success');
-  
-  // Redirect after 1 second
-  setTimeout(() => {
-    window.location.href = '/daftar';
-  }, 1000);
+  // Save to server via API
+  try {
+    const response = await fetch(`${API_BASE}/transaction/create`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(formData)
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      showToast('Data berhasil disimpan!', 'success');
+      
+      // Redirect after 1 second
+      setTimeout(() => {
+        window.location.href = '/daftar';
+      }, 1000);
+    } else {
+      showToast('Gagal menyimpan data: ' + result.error, 'error');
+    }
+  } catch (error) {
+    showToast('Error: ' + error.message, 'error');
+  }
 });
 
 function showToast(message, type) {
