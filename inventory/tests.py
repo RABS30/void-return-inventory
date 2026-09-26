@@ -14,7 +14,7 @@ import csv
 import os
 import shutil
 import tempfile
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from io import BytesIO, StringIO
 
@@ -1453,3 +1453,265 @@ class BarcodeLookupTests(TestCase):
         )
         # elemen feedback status ada untuk loading/error
         self.assertContains(response, 'id="status-barcode"')
+
+
+class DashboardKosongTests(TestCase):
+    """Dashboard Phase 8 ketika database transaksi kosong (empty state).
+
+    Seluruh statistik harus 0, chart aman tanpa pembagian nol,
+    empty state tampil, dan tidak ada lagi data dummy prototype.
+    """
+
+    def setUp(self):
+        self.response = self.client.get(reverse("inventory:dashboard"))
+        self.ctx = self.response.context
+
+    def test_dashboard_200_dan_seluruh_statistik_nol(self):
+        self.assertEqual(self.response.status_code, 200)
+        for kunci in (
+            "jumlah_void_hari_ini",
+            "jumlah_return_hari_ini",
+            "jumlah_transaksi_hari_ini",
+            "jumlah_quantity_hari_ini",
+            "quantity_void_hari_ini",
+            "quantity_return_hari_ini",
+            "jumlah_void_bulan_ini",
+            "jumlah_return_bulan_ini",
+            "jumlah_transaksi_bulan_ini",
+            "jumlah_transaksi",
+            "jumlah_quantity_total",
+        ):
+            self.assertEqual(self.ctx[kunci], 0, f"{kunci} harus 0")
+        self.assertEqual(self.ctx["persen_void_bulan_ini"], 0)
+        self.assertEqual(self.ctx["persen_return_bulan_ini"], 0)
+        self.assertEqual(list(self.ctx["barang_paling_sering"]), [])
+        self.assertEqual(list(self.ctx["entri_terbaru"]), [])
+
+    def test_chart_nol_transaksi_tanpa_pembagian_nol(self):
+        """Total bulan ini = 0 -> 0%/0%, tanpa NaN/Infinity/error template."""
+        self.assertEqual(self.ctx["persen_void_bulan_ini"], 0)
+        self.assertEqual(self.ctx["persen_return_bulan_ini"], 0)
+        html = self.response.content.decode()
+        self.assertNotIn("NaN", html)
+        self.assertNotIn("Infinity", html)
+        self.assertContains(self.response, "width:0%")
+
+    def test_empty_state_entri_dan_barang_paling_sering(self):
+        self.assertContains(self.response, "Belum ada transaksi.")
+        self.assertContains(self.response, "Belum ada transaksi bulan ini.")
+
+    def test_tidak_ada_data_dummy_lagi(self):
+        html = self.response.content.decode()
+        for dummy in (
+            "Indomie Goreng 85g",
+            "Aqua Botol 600ml",
+            "Teh Pucuk Harum",
+            "45 entri bulan ini",
+            "156 data tersimpan",
+            "45 pcs barang",
+            "28 pcs dibatalkan",
+            "17 pcs dikembalikan",
+            "532 pcs sepanjang waktu",
+            "width:62%",
+            "width:38%",
+        ):
+            self.assertNotIn(dummy, html, f"data dummy '{dummy}' masih tampil")
+
+    def test_tanggal_tetap_dinamis(self):
+        """Judul tanggal memakai tanggal hari ini (Asia/Jakarta)."""
+        self.assertContains(
+            self.response, timezone.localdate().strftime("%d %B %Y")
+        )
+
+
+class DashboardTests(TestCase):
+    """Dashboard Phase 8 dengan data transaksi aktual dari database."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.hari_ini = timezone.localdate()
+        katalog = (
+            ("DB001", "Produk Alpha Dashboard", "9000000000001", "A"),
+            ("DB002", "Produk Beta Dashboard", "9000000000002", "B"),
+            ("DB003", "Produk Cema Dashboard", "9000000000003", "C"),
+        )
+        cls.barang_alpha = Barang.objects.create(
+            kode=katalog[0][0], nama=katalog[0][1], barcode_aktif=katalog[0][2],
+            isi=1, h_jual=Decimal("10000.00"), qty_bad_stock=0, qty_akhir=0,
+            qty_gd=0, sat_k="", sat_b="", pareto=katalog[0][3], jenis="BKP",
+        )
+        cls.barang_beta = Barang.objects.create(
+            kode=katalog[1][0], nama=katalog[1][1], barcode_aktif=katalog[1][2],
+            isi=1, h_jual=Decimal("20000.00"), qty_bad_stock=0, qty_akhir=0,
+            qty_gd=0, sat_k="", sat_b="", pareto=katalog[1][3], jenis="BKP",
+        )
+        cls.barang_cema = Barang.objects.create(
+            kode=katalog[2][0], nama=katalog[2][1], barcode_aktif=katalog[2][2],
+            isi=1, h_jual=Decimal("30000.00"), qty_bad_stock=0, qty_akhir=0,
+            qty_gd=0, sat_k="", sat_b="", pareto=katalog[2][3], jenis="BKP",
+        )
+
+    def _buat(self, jenis, tanggal, barang, quantity, **tambahan):
+        """Buat transaksi test (hanya di database test, bukan produksi)."""
+        data = {
+            "jenis": jenis,
+            "tanggal": tanggal,
+            "outlet": "BT1",
+            "nama_kasir": "Sari Wijaya",
+            "otoritas": "MOD Satu",
+            "barang": barang,
+            "quantity": quantity,
+            "alasan": "Transaksi uji dashboard",
+            "foto": "foto/2026/09/dashboard.jpg",
+        }
+        if jenis == "RETURN":
+            data["harga_jual"] = Decimal("10000.00")
+        data.update(tambahan)
+        return VoidReturn.objects.create(**data)
+
+    def _GET(self):
+        response = self.client.get(reverse("inventory:dashboard"))
+        self.assertEqual(response.status_code, 200)
+        return response, response.context
+
+    def test_statistik_hari_ini(self):
+        """VOID qty2 + VOID qty3 + RETURN qty4 -> void 2, return 1, total 3, qty 9."""
+        self._buat("VOID", self.hari_ini, self.barang_alpha, 2)
+        self._buat("VOID", self.hari_ini, self.barang_alpha, 3)
+        self._buat("RETURN", self.hari_ini, self.barang_beta, 4)
+        _, ctx = self._GET()
+        self.assertEqual(ctx["jumlah_void_hari_ini"], 2)
+        self.assertEqual(ctx["jumlah_return_hari_ini"], 1)
+        self.assertEqual(ctx["jumlah_transaksi_hari_ini"], 3)
+        self.assertEqual(ctx["jumlah_quantity_hari_ini"], 9)
+
+    def test_transaksi_hari_lain_tidak_masuk_statistik_hari_ini(self):
+        self._buat("VOID", self.hari_ini, self.barang_alpha, 2)
+        kemarin = self.hari_ini - timedelta(days=1)
+        self._buat("RETURN", kemarin, self.barang_beta, 50)
+        _, ctx = self._GET()
+        self.assertEqual(ctx["jumlah_void_hari_ini"], 1)
+        self.assertEqual(ctx["jumlah_return_hari_ini"], 0)
+        self.assertEqual(ctx["jumlah_transaksi_hari_ini"], 1)
+        self.assertEqual(ctx["jumlah_quantity_hari_ini"], 2)
+
+    def test_transaksi_bulan_lalu_tidak_masuk_periode_bulan_ini(self):
+        # qty sengaja besar supaya menang jika ikut terhitung
+        if self.hari_ini.month == 1:
+            bulan_lalu = date(self.hari_ini.year - 1, 12, 15)
+        else:
+            bulan_lalu = date(self.hari_ini.year, self.hari_ini.month - 1, 15)
+        self._buat("VOID", bulan_lalu, self.barang_cema, 100)
+        self._buat("VOID", self.hari_ini, self.barang_alpha, 2)
+        self._buat("RETURN", self.hari_ini, self.barang_beta, 4)
+        _, ctx = self._GET()
+        # chart bulan ini hanya memuat transaksi bulan berjalan
+        self.assertEqual(ctx["jumlah_void_bulan_ini"], 1)
+        self.assertEqual(ctx["jumlah_return_bulan_ini"], 1)
+        self.assertEqual(ctx["jumlah_transaksi_bulan_ini"], 2)
+        # barang bulan lalu tidak masuk "Barang paling sering bulan ini"
+        nama = [b["nama"] for b in ctx["barang_paling_sering"]]
+        self.assertNotIn(self.barang_cema.nama, nama)
+        self.assertIn(self.barang_alpha.nama, nama)
+        self.assertIn(self.barang_beta.nama, nama)
+
+    def test_entri_terbaru_maksimal_5_terurut_tanggal_desc_id_desc(self):
+        kemarin = self.hari_ini - timedelta(days=1)
+        lusa = self.hari_ini - timedelta(days=2)
+        urutan_buat = [
+            self._buat("VOID", lusa, self.barang_alpha, 1).pk,
+            self._buat("VOID", kemarin, self.barang_alpha, 1).pk,
+            self._buat("RETURN", kemarin, self.barang_beta, 1).pk,
+            self._buat("VOID", kemarin, self.barang_beta, 1).pk,
+            self._buat("VOID", self.hari_ini, self.barang_alpha, 1).pk,
+            self._buat("RETURN", self.hari_ini, self.barang_cema, 1).pk,
+        ]
+        _, ctx = self._GET()
+        terbaru = list(ctx["entri_terbaru"])
+        # 6 transaksi dibuat -> hanya 5 yang tampil
+        self.assertEqual(len(terbaru), 5)
+        # urutan: tanggal DESC, lalu id DESC (tie-break pada tanggal sama)
+        self.assertEqual(
+            [t.pk for t in terbaru],
+            [urutan_buat[5], urutan_buat[4], urutan_buat[3],
+             urutan_buat[2], urutan_buat[1]],
+        )
+
+    def test_entri_terbaru_tanpa_n_plus_satu(self):
+        with CaptureQueriesContext(connection) as sedikit:
+            self.client.get(reverse("inventory:dashboard"))
+        kemarin = self.hari_ini - timedelta(days=1)
+        for i in range(5):
+            self._buat(
+                "VOID" if i % 2 else "RETURN",
+                kemarin if i % 2 else self.hari_ini,
+                self.barang_alpha,
+                1,
+            )
+        with CaptureQueriesContext(connection) as banyak:
+            response, ctx = self._GET()
+        self.assertEqual(len(list(ctx["entri_terbaru"])), 5)
+        # jumlah query tetap meski baris bertambah -> select_related, tanpa N+1
+        self.assertEqual(len(banyak), len(sedikit))
+
+    def test_barang_paling_sering_pakai_sum_quantity_bukan_count(self):
+        # Alpha: 2 transaksi, total qty 2 (count menang, sum kalah)
+        self._buat("VOID", self.hari_ini, self.barang_alpha, 1)
+        self._buat("RETURN", self.hari_ini, self.barang_alpha, 1)
+        # Beta: 1 transaksi, total qty 3 -> menang karena SUM
+        self._buat("VOID", self.hari_ini, self.barang_beta, 3)
+        # Cema: sum sama dengan Beta (3) -> tie-break deterministic: nama
+        self._buat("VOID", self.hari_ini, self.barang_cema, 3)
+        _, ctx = self._GET()
+        peringkat = list(ctx["barang_paling_sering"])
+        self.assertEqual(
+            [b["nama"] for b in peringkat],
+            [self.barang_beta.nama, self.barang_cema.nama, self.barang_alpha.nama],
+        )
+        self.assertEqual([b["jumlah"] for b in peringkat], [3, 3, 2])
+        # bar lebar relatif terhadap top (maks 3): 100%, 100%, 67%
+        self.assertEqual([b["persen"] for b in peringkat], [100, 100, 67])
+
+    def test_chart_void_return_bulan_ini_dan_persen(self):
+        self._buat("VOID", self.hari_ini, self.barang_alpha, 2)
+        self._buat("VOID", self.hari_ini, self.barang_beta, 1)
+        self._buat("RETURN", self.hari_ini, self.barang_cema, 4)
+        response, ctx = self._GET()
+        self.assertEqual(ctx["jumlah_void_bulan_ini"], 2)
+        self.assertEqual(ctx["jumlah_return_bulan_ini"], 1)
+        self.assertEqual(ctx["jumlah_transaksi_bulan_ini"], 3)
+        self.assertEqual(ctx["persen_void_bulan_ini"], 67)
+        self.assertEqual(ctx["persen_return_bulan_ini"], 33)
+        self.assertContains(response, "width:67%")
+        self.assertContains(response, "width:33%")
+
+    def test_pintasan_memakai_angka_dari_database(self):
+        self._buat("VOID", self.hari_ini, self.barang_alpha, 2)
+        self._buat("RETURN", self.hari_ini, self.barang_beta, 1)
+        self._buat("VOID", self.hari_ini - timedelta(days=1), self.barang_cema, 3)
+        response, ctx = self._GET()
+        # angka pintasan diambil dari context, bukan hard-coded
+        self.assertEqual(ctx["jumlah_transaksi"], 3)
+        self.assertContains(response, f"{ctx['jumlah_transaksi']} data tersimpan")
+        self.assertContains(
+            response, f"{ctx['jumlah_transaksi_bulan_ini']} entri bulan ini"
+        )
+        html = response.content.decode()
+        self.assertNotIn("45 entri bulan ini", html)
+        self.assertNotIn("156 data tersimpan", html)
+
+    def test_kartu_hari_ini_render_angka_aktual(self):
+        self._buat("VOID", self.hari_ini, self.barang_alpha, 2)
+        self._buat("VOID", self.hari_ini, self.barang_beta, 3)
+        self._buat("RETURN", self.hari_ini, self.barang_cema, 4)
+        response, ctx = self._GET()
+        self.assertEqual(ctx["jumlah_transaksi_hari_ini"], 3)
+        self.assertEqual(ctx["jumlah_quantity_hari_ini"], 9)
+        self.assertEqual(ctx["quantity_void_hari_ini"], 5)
+        self.assertEqual(ctx["quantity_return_hari_ini"], 4)
+        html = response.content.decode()
+        self.assertContains(response, "9 pcs barang")
+        self.assertContains(response, "5 pcs dibatalkan")
+        self.assertContains(response, "4 pcs dikembalikan")
+        self.assertNotIn("45 pcs barang", html)
+        self.assertNotIn("532 pcs sepanjang waktu", html)

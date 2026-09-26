@@ -2,7 +2,7 @@ import csv
 
 from django.contrib import messages
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -22,8 +22,108 @@ HEADER_RETURN = [
 ]
 
 
+def _jumlah_quantity(queryset):
+    """SUM(quantity) yang aman untuk template: None -> 0 saat tanpa baris."""
+    return queryset.aggregate(jumlah=Sum("quantity"))["jumlah"] or 0
+
+
 def dashboard(request):
-    return render(request, "dashboard.html")
+    """Dashboard: statistik aktual dari database (Phase 8).
+
+    Periode "hari ini" dan "bulan ini" ditentukan dengan
+    `timezone.localdate()` (timezone aplikasi Asia/Jakarta), bukan
+    `datetime.now()`. Semua angka berasal dari agregasi ORM — aman saat
+    database transaksi kosong (0, tanpa division by zero) dan tanpa
+    logika bisnis di template.
+    """
+    hari_ini = timezone.localdate()
+
+    # --- Statistik HARI INI ---
+    transaksi_hari_ini = VoidReturn.objects.filter(tanggal=hari_ini)
+    void_hari_ini = transaksi_hari_ini.filter(jenis=VoidReturn.JENIS_VOID)
+    return_hari_ini = transaksi_hari_ini.filter(jenis=VoidReturn.JENIS_RETURN)
+
+    jumlah_void_hari_ini = void_hari_ini.count()
+    jumlah_return_hari_ini = return_hari_ini.count()
+    jumlah_transaksi_hari_ini = transaksi_hari_ini.count()
+    jumlah_quantity_hari_ini = _jumlah_quantity(transaksi_hari_ini)
+    quantity_void_hari_ini = _jumlah_quantity(void_hari_ini)
+    quantity_return_hari_ini = _jumlah_quantity(return_hari_ini)
+
+    # --- Chart VOID vs RETURN dan Barang paling sering: BULAN INI ---
+    transaksi_bulan_ini = VoidReturn.objects.filter(
+        tanggal__year=hari_ini.year,
+        tanggal__month=hari_ini.month,
+    )
+    jumlah_void_bulan_ini = transaksi_bulan_ini.filter(
+        jenis=VoidReturn.JENIS_VOID
+    ).count()
+    jumlah_return_bulan_ini = transaksi_bulan_ini.filter(
+        jenis=VoidReturn.JENIS_RETURN
+    ).count()
+    jumlah_transaksi_bulan_ini = transaksi_bulan_ini.count()
+
+    # Persentase bar — dihitung di view; aman terhadap total 0.
+    if jumlah_transaksi_bulan_ini:
+        persen_void_bulan_ini = round(
+            jumlah_void_bulan_ini * 100 / jumlah_transaksi_bulan_ini
+        )
+        persen_return_bulan_ini = round(
+            jumlah_return_bulan_ini * 100 / jumlah_transaksi_bulan_ini
+        )
+    else:
+        persen_void_bulan_ini = 0
+        persen_return_bulan_ini = 0
+
+    # Top-3 barang: agregasi SUM(quantity), bukan COUNT transaksi.
+    # Tie-break deterministic: quantity sama -> nama barang.
+    daftar_peringkat = list(
+        transaksi_bulan_ini.values("barang_id", "barang__nama")
+        .annotate(total_quantity=Sum("quantity"))
+        .order_by("-total_quantity", "barang__nama")[:3]
+    )
+    maksimum = daftar_peringkat[0]["total_quantity"] if daftar_peringkat else 0
+    barang_paling_sering = [
+        {
+            "nama": baris["barang__nama"],
+            "jumlah": baris["total_quantity"],
+            "persen": (
+                round(baris["total_quantity"] * 100 / maksimum) if maksimum else 0
+            ),
+        }
+        for baris in daftar_peringkat
+    ]
+
+    # --- Pintasan & total tercatat ---
+    jumlah_transaksi = VoidReturn.objects.count()
+    jumlah_quantity_total = _jumlah_quantity(VoidReturn.objects.all())
+
+    # --- Entri terbaru: 5 terakhir, tanpa N+1 ---
+    entri_terbaru = VoidReturn.objects.select_related("barang").order_by(
+        "-tanggal", "-id"
+    )[:5]
+
+    return render(
+        request,
+        "dashboard.html",
+        {
+            "jumlah_void_hari_ini": jumlah_void_hari_ini,
+            "jumlah_return_hari_ini": jumlah_return_hari_ini,
+            "jumlah_transaksi_hari_ini": jumlah_transaksi_hari_ini,
+            "jumlah_quantity_hari_ini": jumlah_quantity_hari_ini,
+            "quantity_void_hari_ini": quantity_void_hari_ini,
+            "quantity_return_hari_ini": quantity_return_hari_ini,
+            "jumlah_void_bulan_ini": jumlah_void_bulan_ini,
+            "jumlah_return_bulan_ini": jumlah_return_bulan_ini,
+            "jumlah_transaksi_bulan_ini": jumlah_transaksi_bulan_ini,
+            "persen_void_bulan_ini": persen_void_bulan_ini,
+            "persen_return_bulan_ini": persen_return_bulan_ini,
+            "barang_paling_sering": barang_paling_sering,
+            "jumlah_transaksi": jumlah_transaksi,
+            "jumlah_quantity_total": jumlah_quantity_total,
+            "entri_terbaru": entri_terbaru,
+        },
+    )
 
 
 def input(request):
