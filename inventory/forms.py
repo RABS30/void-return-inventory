@@ -109,7 +109,7 @@ class VoidReturnForm(forms.ModelForm):
             barang = Barang.objects.get(barcode_aktif=barcode)
         except Barang.DoesNotExist:
             raise ValidationError(
-                "Barcode tidak ditemukan di Master Barang.",
+                "Barcode tidak ditemukan di Database Barang.",
                 code="tidak_ditemukan",
             ) from None
         self.cleaned_data["barang"] = barang

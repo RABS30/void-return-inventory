@@ -80,7 +80,7 @@ MAKS_TAMPIL_GALAT = 100
 
 class Command(BaseCommand):
     help = (
-        "Import Master Barang dari inventory.csv (sumber resmi) ke model Barang. "
+        "Import database Barang dari inventory.csv (sumber resmi) ke model Barang. "
         "Sekali jalan, validasi penuh sebelum tulis, tidak destructive."
     )
 
@@ -273,7 +273,7 @@ class Command(BaseCommand):
         selesai = time.perf_counter() - t0
         self.stdout.write(
             self.style.SUCCESS(
-                f"Berhasil: {jumlah_db:,} Master Barang tersimpan di PostgreSQL "
+                f"Berhasil: {jumlah_db:,} database Barang tersimpan di PostgreSQL "
                 f"(encoding {enc_dipakai}, {selesai:.1f} detik)."
             )
         )

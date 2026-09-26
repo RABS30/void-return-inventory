@@ -14,7 +14,7 @@
         Kembali ke dashboard
       </a>
       <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight mt-2">Input Void / Return</h1>
-      <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Cukup isi barcode — nama barang diambil dari master berdasarkan BarcodeAktif.</p>
+      <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Cukup isi barcode — nama barang diambil dari database berdasarkan BarcodeAktif.</p>
 
          {% if messages %}
         {% for message in messages %}
@@ -84,7 +84,7 @@
               <span class="hidden sm:inline">Scan</span>
             </button>
           </div>
-          <div class="mt-2 text-xs text-slate-500 dark:text-slate-400">Barcode dicocokkan dengan master barang (kolom BarcodeAktif) pada saat disimpan.</div>
+          <div class="mt-2 text-xs text-slate-500 dark:text-slate-400">Barcode dicocokkan dengan database barang (kolom BarcodeAktif) pada saat disimpan.</div>
           <div id="status-barcode" role="status" aria-live="polite" class="mt-2 text-xs font-semibold hidden"></div>
 
           <!-- Panel scanner kamera (V1.1): scanner HANYA mengisi field barcode;
@@ -104,11 +104,11 @@
           </div>
         </div>
 
-        <!-- Nama Produk (sumber: master barang, bukan input bebas) -->
+        <!-- Nama Produk (sumber: database barang, bukan input bebas) -->
         <div>
           <label for="nama-produk" class="block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Nama Produk</label>
-          <input type="text" id="nama-produk" readonly tabindex="-1" placeholder="Terisi otomatis dari master berdasarkan barcode" class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400 px-3.5 py-3 sm:py-2.5 text-base sm:text-sm cursor-not-allowed">
-          <div class="mt-2 text-xs text-slate-500 dark:text-slate-400">Nama produk bersumber dari Master Barang melalui lookup barcode di backend — bukan input bebas dari frontend.</div>
+          <input type="text" id="nama-produk" readonly tabindex="-1" placeholder="Terisi otomatis dari database berdasarkan barcode" class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400 px-3.5 py-3 sm:py-2.5 text-base sm:text-sm cursor-not-allowed">
+          <div class="mt-2 text-xs text-slate-500 dark:text-slate-400">Nama produk bersumber dari database Barang melalui lookup barcode di backend — bukan input bebas dari frontend.</div>
         </div>
 
         <!-- Jenis transaksi -->

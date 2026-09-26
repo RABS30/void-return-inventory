@@ -145,7 +145,7 @@ def input(request):
 
 @require_GET
 def barcode_lookup(request, barcode):
-    """Lookup Master Barang via barcode untuk AJAX (read-only).
+    """Lookup database Barang via barcode untuk AJAX (read-only).
 
     - Barcode diperlakukan sebagai string: exact match `barcode_aktif`,
       aman untuk leading zero (tidak di-cast ke integer, tanpa fuzzy).
@@ -278,7 +278,7 @@ def export_return(request):
             transaksi.barang.nama,
             transaksi.barang.barcode_aktif,
             transaksi.quantity,
-            transaksi.harga_jual,  # snapshot input manual, bukan dari master
+            transaksi.harga_jual,  # snapshot input manual, bukan dari database
             transaksi.otoritas,
             transaksi.alasan,
         )

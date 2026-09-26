@@ -1,6 +1,6 @@
 """Test form (Phase 3.1), Create View /input (Phase 3.2), Daftar /daftar (Phase 3.3).
 
-Fixtures dibuat sendiri — tidak bergantung pada Master Barang produksi
+Fixtures dibuat sendiri — tidak bergantung pada database Barang produksi
 (17.257 record). Foto dibuat via Pillow: PNG kecil, BMP valid > 5 MB,
 dan file non-gambar.
 
@@ -179,7 +179,7 @@ class VoidReturnFormTests(TestCase):
         self.assertFalse(form.is_valid())
         self.assertIn("barcode", form.errors)
         self.assertIn(
-            "Barcode tidak ditemukan di Master Barang.", form.errors["barcode"]
+            "Barcode tidak ditemukan di database Barang.", form.errors["barcode"]
         )
 
     def test_outlet_bt0_ditolak(self):
@@ -413,7 +413,7 @@ class InputViewTests(TestCase):
         self.assertContains(response, "Transaksi Return berhasil disimpan.")
 
     def test_post_invalid_tidak_membuat_record(self):
-        data = self.data_void(barcode="0000000000000")  # tidak ada di master
+        data = self.data_void(barcode="0000000000000")  # tidak ada di database
         response = self.client.post(reverse("inventory:input"), data)
 
         self.assertEqual(response.status_code, 200)  # bukan redirect

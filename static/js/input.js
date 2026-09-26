@@ -406,7 +406,7 @@
         if (!nilai || !scannerAktif) return;
 
         hentikanKamera(); // kamera berhenti begitu barcode terbaca
-        setStatusScanner('Barcode terbaca: ' + nilai + ' — memeriksa ke master…', 'info');
+        setStatusScanner('Barcode terbaca: ' + nilai + ' — memeriksa ke database…', 'info');
         if (!inputBarcode) return;
 
         // Panel scanner hanya diberi tahu hasil lookup backend; penentuan
@@ -420,7 +420,7 @@
                     tutupScanner('Scanner ditutup otomatis setelah barcode ditemukan.');
                 }, 900);
             } else if (status === 'tidak') {
-                setStatusScanner('Barcode tidak ditemukan — terbaca kamera, tetapi tidak ada di master.', 'gagal');
+                setStatusScanner('Barcode tidak ditemukan — terbaca kamera, tetapi tidak ada di database.', 'gagal');
             } else if (status === 'gagal') {
                 setStatusScanner('Gagal memeriksa barcode ke backend. Coba lagi.', 'gagal');
             } else {
@@ -458,7 +458,7 @@
 
         setStatusScanner('Membuka kamera…', 'info');
 
-        // Format retail 1D yang relevan dengan master — tanpa QR/2D agar
+        // Format retail 1D yang relevan dengan database — tanpa QR/2D agar
         // fokus ke kebutuhan scan produk; hasil decode berupa string murni.
         var hints = new Map();
         hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
