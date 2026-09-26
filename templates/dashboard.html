@@ -163,6 +163,32 @@
             </tbody>
           </table>
         </div>
+
+        <!-- Mobile View (card per transaksi) — tabel di atas hanya untuk layar sm+;
+             tanpa blok ini list "Entri terbaru" tersembunyi total di mobile. -->
+        <div class="sm:hidden border-t border-slate-100 dark:border-slate-800">
+          {% for transaksi in entri_terbaru %}
+          <div class="px-4 py-3.5 border-b border-slate-100 dark:border-slate-800 last:border-0">
+            <div class="flex items-start justify-between gap-3">
+              <p class="text-sm font-semibold truncate min-w-0">{{ transaksi.barang.nama }}</p>
+              {% if transaksi.jenis == "VOID" %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-extrabold bg-rose-100 text-rose-800 shrink-0">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="w-3 h-3"><circle cx="12" cy="12" r="8"/><path d="M6.8 6.8l10.4 10.4"/></svg>
+                VOID
+              </span>
+              {% else %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-extrabold bg-emerald-100 text-emerald-800 shrink-0">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="w-3 h-3"><path d="M9.5 5.5L5 10l4.5 4.5"/><path d="M5 10h9a5 5 0 0 1 0 10h-2.5"/></svg>
+                RETURN
+              </span>
+              {% endif %}
+            </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">{{ transaksi.tanggal|date:"d M Y" }} · Qty {{ transaksi.quantity }}</p>
+          </div>
+          {% empty %}
+          <div class="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">Belum ada transaksi.</div>
+          {% endfor %}
+        </div>
       </div>
     </section>
   </main>
