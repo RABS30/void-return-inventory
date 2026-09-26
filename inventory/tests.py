@@ -1323,3 +1323,133 @@ class ExportKosongTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
         self.assertEqual(baris, [HEADER_RETURN_PERSIS])
+
+
+class BarcodeLookupTests(TestCase):
+    """Test endpoint AJAX lookup /barcode/<barcode> (Phase 3.6)."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.barang = Barang.objects.create(
+            kode="AJX001",
+            nama="YZ BROS / BEAUTY BROS",
+            barcode_aktif="1000000020",
+            isi=1,
+            h_jual=Decimal("5000.00"),
+            qty_bad_stock=0,
+            qty_akhir=0,
+            qty_gd=0,
+            sat_k="",
+            sat_b="",
+            pareto="A",
+            jenis="BKP",
+        )
+        cls.barang_nol = Barang.objects.create(
+            kode="AJX002",
+            nama="Produk Leading Zero",
+            barcode_aktif="001234567890",  # leading zero, wajib tetap string
+            isi=1,
+            h_jual=Decimal("7500.00"),
+            qty_bad_stock=0,
+            qty_akhir=0,
+            qty_gd=0,
+            sat_k="",
+            sat_b="",
+            pareto="B",
+            jenis="BKP",
+        )
+
+    def url(self, barcode):
+        return reverse("inventory:barcode_lookup", args=[barcode])
+
+    def test_barcode_valid_get_200_dan_json(self):
+        response = self.client.get(self.url("1000000020"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response["Content-Type"].startswith("application/json"))
+        self.assertJSONEqual(
+            response.content,
+            {"found": True, "barcode": "1000000020", "nama": "YZ BROS / BEAUTY BROS"},
+        )
+
+    def test_barcode_tidak_ditemukan_found_false_bukan_500(self):
+        response = self.client.get(self.url("9999999999999"))
+
+        # tidak ditemukan = kondisi bisnis normal, bukan error server
+        self.assertEqual(response.status_code, 200)
+        self.assertJSONEqual(
+            response.content,
+            {"found": False, "barcode": "9999999999999"},
+        )
+
+    def test_barcode_leading_zero_tetap_string(self):
+        # record dengan leading zero tetap ditemukan
+        response = self.client.get(self.url("001234567890"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertJSONEqual(
+            response.content,
+            {"found": True, "barcode": "001234567890", "nama": "Produk Leading Zero"},
+        )
+
+        # versi tanpa leading zero TIDAK ditemukan -> bukan cast integer,
+        # bukan pencarian fuzzy
+        response = self.client.get(self.url("1234567890"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertJSONEqual(
+            response.content, {"found": False, "barcode": "1234567890"}
+        )
+
+    def test_barcode_kosong_tanpa_query_database(self):
+        with self.assertNumQueries(0):
+            response = self.client.get(self.url(""))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertJSONEqual(response.content, {"found": False, "barcode": ""})
+
+    def test_post_ditolak_dan_tidak_mengubah_database(self):
+        jumlah_void = VoidReturn.objects.count()
+        jumlah_barang = Barang.objects.count()
+
+        response = self.client.post(self.url("1000000020"))
+
+        # lookup read-only: method selain GET ditolak, data tetap utuh
+        self.assertEqual(response.status_code, 405)
+        self.assertEqual(VoidReturn.objects.count(), jumlah_void)
+        self.assertEqual(Barang.objects.count(), jumlah_barang)
+
+    def test_get_tidak_membuat_transaksi_dan_tidak_mengubah_barang(self):
+        sebelum = Barang.objects.get(pk=self.barang.pk)
+
+        response = self.client.get(self.url("1000000020"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(VoidReturn.objects.count(), 0)  # tidak membuat transaksi
+        sesudah = Barang.objects.get(pk=self.barang.pk)
+        self.assertEqual(sesudah.nama, sebelum.nama)
+        self.assertEqual(sesudah.barcode_aktif, sebelum.barcode_aktif)
+        self.assertEqual(sesudah.h_jual, sebelum.h_jual)
+
+    def test_struktur_json_konsisten(self):
+        ditemukan = self.client.get(self.url("1000000020")).json()
+        tidak_ditemukan = self.client.get(self.url("9999999999999")).json()
+
+        self.assertEqual(set(ditemukan.keys()), {"found", "barcode", "nama"})
+        self.assertEqual(set(tidak_ditemukan.keys()), {"found", "barcode"})
+        self.assertIs(ditemukan["found"], True)
+        self.assertIs(tidak_ditemukan["found"], False)
+
+    def test_template_input_memuat_js_dan_url_lookup(self):
+        response = self.client.get(reverse("inventory:input"))
+
+        # memakai file JS existing (tanpa file duplikat)
+        self.assertContains(response, "js/input.js")
+        # URL dirender Django dengan placeholder (tanpa hard-code host)
+        self.assertContains(
+            response,
+            'data-url-template="%s"'
+            % reverse("inventory:barcode_lookup", args=["__BARCODE__"]),
+        )
+        # elemen feedback status ada untuk loading/error
+        self.assertContains(response, 'id="status-barcode"')

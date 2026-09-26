@@ -3,13 +3,13 @@ import csv
 from django.contrib import messages
 from django.db import transaction
 from django.db.models import Q
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 
 from .forms import VoidReturnForm
-from .models import VoidReturn
+from .models import Barang, VoidReturn
 
 # Header CSV laporan — urutan kolom mengikuti requirement bisnis. Jangan diubah.
 HEADER_VOID = [
@@ -41,6 +41,30 @@ def input(request):
         form = VoidReturnForm()
 
     return render(request, "input.html", {"form": form})
+
+
+@require_GET
+def barcode_lookup(request, barcode):
+    """Lookup Master Barang via barcode untuk AJAX (read-only).
+
+    - Barcode diperlakukan sebagai string: exact match `barcode_aktif`,
+      aman untuk leading zero (tidak di-cast ke integer, tanpa fuzzy).
+    - Barcode tidak ditemukan adalah kondisi bisnis normal -> found=false
+      dengan status 200 (bukan 500).
+    - Barcode kosong -> tanpa query database.
+    - Tidak ada perubahan data apa pun.
+    """
+    if not barcode:
+        return JsonResponse({"found": False, "barcode": ""})
+
+    try:
+        barang = Barang.objects.get(barcode_aktif=barcode)
+    except Barang.DoesNotExist:
+        return JsonResponse({"found": False, "barcode": barcode})
+
+    return JsonResponse(
+        {"found": True, "barcode": barang.barcode_aktif, "nama": barang.nama}
+    )
 
 
 def daftar(request):
