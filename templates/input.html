@@ -76,7 +76,7 @@
           <label for="barcode" class="block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Barcode * <span class="normal-case font-semibold text-slate-400">(BarcodeAktif)</span></label>
           <div class="flex gap-2">
             <input type="text" id="barcode" name="barcode" value="{{ form.barcode.value|default_if_none:'' }}" placeholder="Scan atau ketik barcode" autocomplete="off" required data-url-template="{% url 'inventory:barcode_lookup' '__BARCODE__' %}" class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3.5 py-3 sm:py-2.5 text-base sm:text-sm focus:ring-2 focus:ring-brand-500 font-mono flex-1">
-            <button type="button" class="shrink-0 px-3.5 rounded-xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 flex items-center gap-2 font-semibold text-sm hover:bg-slate-800">
+            <button type="button" id="tombol-scan" aria-controls="scanner-panel" aria-expanded="false" class="shrink-0 px-3.5 rounded-xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 flex items-center gap-2 font-semibold text-sm hover:bg-slate-800">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5">
                 <path d="M4 8.5h3.2L8.6 6h6.8l1.4 2.5H20a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5a1 1 0 0 1 1-1z"/>
                 <circle cx="12" cy="13" r="3.3"/>
@@ -86,6 +86,22 @@
           </div>
           <div class="mt-2 text-xs text-slate-500 dark:text-slate-400">Barcode dicocokkan dengan master barang (kolom BarcodeAktif) pada saat disimpan.</div>
           <div id="status-barcode" role="status" aria-live="polite" class="mt-2 text-xs font-semibold hidden"></div>
+
+          <!-- Panel scanner kamera (V1.1): scanner HANYA mengisi field barcode;
+               nama produk tetap divalidasi backend lewat lookup yang sudah ada. -->
+          <div id="scanner-panel" class="mt-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-4 hidden" hidden>
+            <div class="flex items-start justify-between gap-3">
+              <p id="scanner-status" role="status" aria-live="polite" class="text-xs font-semibold text-slate-600 dark:text-slate-300">Scanner siap.</p>
+              <button type="button" id="tombol-tutup-scanner" class="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700">Tutup Scanner</button>
+            </div>
+            <div class="mt-3 relative rounded-xl overflow-hidden bg-black">
+              <video id="scanner-video" class="block w-full aspect-video object-cover" playsinline muted autoplay></video>
+              <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <div class="w-4/5 h-1/3 border-2 border-dashed border-white/70 rounded-lg"></div>
+              </div>
+            </div>
+            <p class="mt-2 text-[11px] text-slate-500 dark:text-slate-400">Arahkan kamera ke barcode retail (EAN-13, EAN-8, UPC-A, dll.). Kamera berhenti otomatis setelah barcode terbaca; nama produk tetap divalidasi oleh backend.</p>
+          </div>
         </div>
 
         <!-- Nama Produk (sumber: master barang, bukan input bebas) -->
@@ -169,5 +185,10 @@
 {% endblock content %}
 
 {% block scripts %}
-  <script src="{% static 'js/input.js' %}?v=3"></script>
+  <!-- ZXing barcode scanner — versi dipin (bukan "latest").
+       @zxing/library -> global ZXing (enum DecodeHintType / BarcodeFormat)
+       @zxing/browser  -> global ZXingBrowser (pembaca kamera/video) -->
+  <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.23.0/umd/index.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.2.1/umd/zxing-browser.min.js"></script>
+  <script src="{% static 'js/input.js' %}?v=4"></script>
 {% endblock scripts %}

@@ -18,6 +18,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from io import BytesIO, StringIO
 
+from django.conf import settings
 from django.core.files.storage import default_storage, storages
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
@@ -1009,7 +1010,7 @@ HEADER_VOID_PERSIS = [
 ]
 HEADER_RETURN_PERSIS = [
     "TANGGAL", "OUTLET", "NAMA KASIR", "NO.TRANS", "NAMA PRODUK",
-    "BARCODE", "QTY", "H.JUAL", "OTORITAS", "ALASAN REFUND",
+    "BARCODE", "QTY", "H.JUAL", "OTORITAS", "ALASAN RETURN",
 ]
 
 
@@ -1200,9 +1201,9 @@ class ExportCsvTests(TestCase):
 
         self.assertEqual(baris[0], HEADER_RETURN_PERSIS)
         self.assertEqual(len(baris[0]), 10)  # tepat 10 kolom, tanpa tambahan
-        # koreksi client: kolom terakhir "ALASAN REFUND", bukan "ALASAN RETURN"
-        self.assertIn("ALASAN REFUND", baris[0])
-        self.assertNotIn("ALASAN RETURN", baris[0])
+        # terminologi final (V1.1): kolom terakhir "ALASAN RETURN"
+        self.assertIn("ALASAN RETURN", baris[0])
+        self.assertNotIn("ALASAN REFUND", baris[0])
 
     def test_return_hanya_berisi_transaksi_return(self):
         _, teks, baris = self.ambil_csv("inventory:export_return")
@@ -1228,7 +1229,7 @@ class ExportCsvTests(TestCase):
                 "3",                       # QTY
                 "12500.00",                # H.JUAL (input manual)
                 "Hadi Kurnia",             # OTORITAS
-                "Rusak berat",             # ALASAN REFUND
+                "Rusak berat",             # ALASAN RETURN
             ],
         )
         self.assertEqual(
@@ -1330,7 +1331,7 @@ class ExportKosongTests(TestCase):
         self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
         self.assertEqual(baris, [HEADER_RETURN_PERSIS])
         self.assertEqual(len(baris[0]), 10)  # header-only, tetap 10 kolom
-        self.assertNotIn("ALASAN RETURN", baris[0])
+        self.assertNotIn("ALASAN REFUND", baris[0])
 
 
 class BarcodeLookupTests(TestCase):
@@ -1723,3 +1724,52 @@ class DashboardTests(TestCase):
         self.assertContains(response, "4 pcs dikembalikan")
         self.assertNotIn("45 pcs barang", html)
         self.assertNotIn("532 pcs sepanjang waktu", html)
+
+
+class ScannerWiringTests(TestCase):
+    """V1.1 — wiring UI scanner kamera (template + input.js).
+
+    Catatan jujur: automated test Django TIDAK dapat mengakses kamera browser.
+    Test ini hanya mengunci keberadaan UI, versi library yang dipin, dan
+    integrasi scanner dengan flow lookup barcode existing (no regression).
+    Pembacaan barcode fisik diuji lewat manual camera test checklist.
+    """
+
+    def _halaman_input(self):
+        response = self.client.get(reverse("inventory:input"))
+        self.assertEqual(response.status_code, 200)
+        return response.content.decode()
+
+    def test_tombol_scan_dan_panel_scanner_tersedia(self):
+        html = self._halaman_input()
+        self.assertIn('id="tombol-scan"', html)
+        self.assertIn('id="scanner-panel"', html)
+        self.assertIn('id="scanner-video"', html)
+        self.assertIn('id="scanner-status"', html)
+        self.assertIn('id="tombol-tutup-scanner"', html)
+        self.assertIn("Tutup Scanner", html)
+
+    def test_library_scanner_dipin_bukan_latest_dan_urut_sebelum_input_js(self):
+        html = self._halaman_input()
+        self.assertIn("cdn.jsdelivr.net/npm/@zxing/library@0.23.0", html)
+        self.assertIn("cdn.jsdelivr.net/npm/@zxing/browser@0.2.1", html)
+        self.assertNotIn("@zxing/library@latest", html)
+        self.assertNotIn("@zxing/browser@latest", html)
+        # library dimuat sebelum input.js memakainya
+        self.assertLess(html.index("@zxing/library@0.23.0"), html.index("js/input.js"))
+        self.assertLess(html.index("@zxing/browser@0.2.1"), html.index("js/input.js"))
+
+    def test_input_js_scanner_kamera_cleanup_dan_integrasi_lookup(self):
+        path = os.path.join(settings.BASE_DIR, "static", "js", "input.js")
+        with open(path, encoding="utf-8") as f:
+            isi = f.read()
+        # membuka kamera lewat constraints (bukan BarcodeDetector saja)
+        self.assertIn("decodeFromConstraints", isi)
+        self.assertIn("facingMode", isi)
+        # stream dihentikan saat ditutup / pindah halaman
+        self.assertIn("getTracks", isi)
+        self.assertIn("pagehide", isi)
+        # scanner mengisi field barcode lalu memicu flow lookup AJAX existing
+        self.assertIn("dispatchEvent(new Event('input'", isi)
+        # template URL lookup tetap dirender Django (source of truth backend)
+        self.assertIn("__BARCODE__", isi)
