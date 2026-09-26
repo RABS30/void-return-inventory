@@ -1009,7 +1009,7 @@ HEADER_VOID_PERSIS = [
 ]
 HEADER_RETURN_PERSIS = [
     "TANGGAL", "OUTLET", "NAMA KASIR", "NO.TRANS", "NAMA PRODUK",
-    "BARCODE", "QTY", "H.JUAL", "OTORITAS", "ALASAN RETURN",
+    "BARCODE", "QTY", "H.JUAL", "OTORITAS", "ALASAN REFUND",
 ]
 
 
@@ -1125,6 +1125,7 @@ class ExportCsvTests(TestCase):
         _, _, baris = self.ambil_csv("inventory:export_void")
 
         self.assertEqual(baris[0], HEADER_VOID_PERSIS)
+        self.assertEqual(len(baris[0]), 9)  # tepat 9 kolom, tanpa tambahan
 
     def test_void_hanya_berisi_transaksi_void(self):
         _, teks, baris = self.ambil_csv("inventory:export_void")
@@ -1198,6 +1199,10 @@ class ExportCsvTests(TestCase):
         _, _, baris = self.ambil_csv("inventory:export_return")
 
         self.assertEqual(baris[0], HEADER_RETURN_PERSIS)
+        self.assertEqual(len(baris[0]), 10)  # tepat 10 kolom, tanpa tambahan
+        # koreksi client: kolom terakhir "ALASAN REFUND", bukan "ALASAN RETURN"
+        self.assertIn("ALASAN REFUND", baris[0])
+        self.assertNotIn("ALASAN RETURN", baris[0])
 
     def test_return_hanya_berisi_transaksi_return(self):
         _, teks, baris = self.ambil_csv("inventory:export_return")
@@ -1223,7 +1228,7 @@ class ExportCsvTests(TestCase):
                 "3",                       # QTY
                 "12500.00",                # H.JUAL (input manual)
                 "Hadi Kurnia",             # OTORITAS
-                "Rusak berat",             # ALASAN RETURN
+                "Rusak berat",             # ALASAN REFUND
             ],
         )
         self.assertEqual(
@@ -1313,6 +1318,7 @@ class ExportKosongTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
         self.assertEqual(baris, [HEADER_VOID_PERSIS])
+        self.assertEqual(len(baris[0]), 9)  # header-only, tetap 9 kolom
 
     def test_export_return_kosong_hanya_header(self):
         response = self.client.get(reverse("inventory:export_return"))
@@ -1323,6 +1329,8 @@ class ExportKosongTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
         self.assertEqual(baris, [HEADER_RETURN_PERSIS])
+        self.assertEqual(len(baris[0]), 10)  # header-only, tetap 10 kolom
+        self.assertNotIn("ALASAN RETURN", baris[0])
 
 
 class BarcodeLookupTests(TestCase):
