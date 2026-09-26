@@ -179,7 +179,7 @@ class VoidReturnFormTests(TestCase):
         self.assertFalse(form.is_valid())
         self.assertIn("barcode", form.errors)
         self.assertIn(
-            "Barcode tidak ditemukan di database Barang.", form.errors["barcode"]
+            "Barcode tidak ditemukan di Database Barang.", form.errors["barcode"]
         )
 
     def test_outlet_bt0_ditolak(self):
