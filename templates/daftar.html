@@ -13,18 +13,18 @@
           <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Seluruh transaksi Void dan Return yang tersimpan.</p>
         </div>
         <div class="flex gap-2 w-full sm:w-auto">
-          <button type="button" class="flex-1 sm:flex-none justify-center px-4 py-2.5 rounded-xl text-sm font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 inline-flex items-center gap-2">
+          <a href="{% url 'inventory:export_void' %}" class="flex-1 sm:flex-none justify-center px-4 py-2.5 rounded-xl text-sm font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 inline-flex items-center gap-2">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
               <path d="M12 4v10"/><path d="M8 10.5l4 4 4-4"/><path d="M5 19h14"/>
             </svg>
             Export Void
-          </button>
-          <button type="button" class="flex-1 sm:flex-none justify-center px-4 py-2.5 rounded-xl text-sm font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 inline-flex items-center gap-2">
+          </a>
+          <a href="{% url 'inventory:export_return' %}" class="flex-1 sm:flex-none justify-center px-4 py-2.5 rounded-xl text-sm font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 inline-flex items-center gap-2">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
               <path d="M12 4v10"/><path d="M8 10.5l4 4 4-4"/><path d="M5 19h14"/>
             </svg>
             Export Return
-          </button>
+          </a>
           <a href={% url "inventory:input" %} class="hidden sm:inline-block px-4 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-bold hover:bg-brand-700">+ Input</a>
         </div>
       </div>

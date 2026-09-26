@@ -10,12 +10,13 @@ project. Fixture Daftar cukup memakai path foto berbentuk string —
 tidak menyentuh storage.
 """
 
+import csv
 import os
 import shutil
 import tempfile
 from datetime import date
 from decimal import Decimal
-from io import BytesIO
+from io import BytesIO, StringIO
 
 from django.core.files.storage import default_storage, storages
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -998,3 +999,327 @@ class HapusViewTests(TestCase):
             VoidReturn.objects.filter(pk=self.transaksi_void.pk).exists()
         )
         self.assertEqual(VoidReturn.objects.count(), 1)
+
+
+# Header CSV ditulis literal (bukan diimpor dari views) agar test mengunci
+# spesifikasi requirement, bukan sekadar mengulang konstanta implementasi.
+HEADER_VOID_PERSIS = [
+    "NO", "OUTLET", "TANGGAL", "NAMA PRODUK", "BARCODE",
+    "QTY", "KASIR", "OTORITAS", "ALASAN VOID",
+]
+HEADER_RETURN_PERSIS = [
+    "TANGGAL", "OUTLET", "NAMA KASIR", "NO.TRANS", "NAMA PRODUK",
+    "BARCODE", "QTY", "H.JUAL", "OTORITAS", "ALASAN RETURN",
+]
+
+
+class ExportCsvTests(TestCase):
+    """Test Export CSV /daftar/export/void & /daftar/export/return (Phase 3.5)."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.barang_a = Barang.objects.create(
+            kode="EXP001",
+            nama="Indomie Goreng 85g",
+            barcode_aktif="8991111111111",
+            isi=1,
+            h_jual=Decimal("3500.00"),
+            qty_bad_stock=0,
+            qty_akhir=0,
+            qty_gd=0,
+            sat_k="",
+            sat_b="",
+            pareto="A",
+            jenis="BKP",
+        )
+        cls.barang_b = Barang.objects.create(
+            kode="EXP002",
+            nama='Chitato Sapi "Panggang" 68g',  # kutip ganda di nama produk
+            barcode_aktif="8992222222222",
+            isi=1,
+            h_jual=Decimal("12500.00"),
+            qty_bad_stock=0,
+            qty_akhir=0,
+            qty_gd=0,
+            sat_k="",
+            sat_b="",
+            pareto="A",
+            jenis="BKP",
+        )
+
+        # VOID — dua data (beda tanggal) supaya nomor urut & ordering bisa diuji.
+        cls.void_baru = VoidReturn.objects.create(
+            jenis="VOID",
+            tanggal=date(2026, 9, 25),
+            outlet="BT2",
+            nama_kasir="Budi, Santoso",  # koma di dalam nilai
+            otoritas="Andi Wijaya",
+            barang=cls.barang_a,
+            quantity=2,
+            alasan='Salah pindai, "ganda" — komplain ñiño',
+            foto="foto/exp/void-baru.jpg",
+        )
+        cls.void_lama = VoidReturn.objects.create(
+            jenis="VOID",
+            tanggal=date(2026, 9, 20),
+            outlet="BT5",
+            nama_kasir="Rina",
+            otoritas="MOD Rina",
+            barang=cls.barang_b,
+            quantity=1,
+            alasan="Kedaluwarsa",
+            foto="foto/exp/void-lama.jpg",
+        )
+
+        # RETURN — satu dengan no_trans, satu no_trans kosong (NULL).
+        cls.ret_no_trans = VoidReturn.objects.create(
+            jenis="RETURN",
+            tanggal=date(2026, 9, 24),
+            outlet="BT7",
+            nama_kasir="Dewi",
+            otoritas="Hadi Kurnia",
+            no_trans="TRX-0099",
+            barang=cls.barang_a,
+            quantity=1,
+            harga_jual=Decimal("9999.50"),
+            alasan='Salah kirim, "cek lagi"',
+            foto="foto/exp/ret-no.jpg",
+        )
+        cls.ret_tanpa_no = VoidReturn.objects.create(
+            jenis="RETURN",
+            tanggal=date(2026, 9, 26),
+            outlet="BT3",
+            nama_kasir="Siti, Aminah",
+            otoritas="Hadi Kurnia",
+            no_trans=None,
+            barang=cls.barang_b,
+            quantity=3,
+            harga_jual=Decimal("12500.00"),
+            alasan="Rusak berat",
+            foto="foto/exp/ret-tanpa.jpg",
+        )
+
+    def ambil_csv(self, nama_url):
+        """GET endpoint export -> (response, teks tanpa BOM, baris csv)."""
+        response = self.client.get(reverse(nama_url))
+        teks = response.content.decode("utf-8-sig")
+        return response, teks, list(csv.reader(StringIO(teks)))
+
+    # --- Export Void -----------------------------------------------------
+
+    def test_void_status_dan_content_type(self):
+        response, _, _ = self.ambil_csv("inventory:export_void")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
+
+    def test_void_content_disposition_dan_filename(self):
+        response, _, _ = self.ambil_csv("inventory:export_void")
+        hari_ini = timezone.localdate().isoformat()
+
+        disposition = response["Content-Disposition"]
+        self.assertIn("attachment", disposition)
+        self.assertIn(f'filename="laporan-void-{hari_ini}.csv"', disposition)
+
+    def test_void_header_persis(self):
+        _, _, baris = self.ambil_csv("inventory:export_void")
+
+        self.assertEqual(baris[0], HEADER_VOID_PERSIS)
+
+    def test_void_hanya_berisi_transaksi_void(self):
+        _, teks, baris = self.ambil_csv("inventory:export_void")
+
+        # dua transaksi VOID -> header + 2 baris data
+        self.assertEqual(len(baris), 3)
+        # penanda khusus data RETURN tidak boleh muncul
+        self.assertNotIn("TRX-0099", teks)
+        self.assertNotIn("Siti, Aminah", teks)
+        self.assertNotIn("Rusak berat", teks)
+
+    def test_void_isi_baris_lengkap(self):
+        _, _, baris = self.ambil_csv("inventory:export_void")
+
+        self.assertEqual(
+            baris[1],
+            [
+                "1",                       # NO (nomor urut laporan)
+                "BT2",                     # OUTLET
+                "2026-09-25",              # TANGGAL
+                "Indomie Goreng 85g",      # NAMA PRODUK (dari relasi Barang)
+                "8991111111111",           # BARCODE
+                "2",                       # QTY
+                "Budi, Santoso",           # KASIR
+                "Andi Wijaya",             # OTORITAS
+                'Salah pindai, "ganda" — komplain ñiño',  # ALASAN VOID
+            ],
+        )
+        self.assertEqual(
+            baris[2],
+            [
+                "2", "BT5", "2026-09-20",
+                'Chitato Sapi "Panggang" 68g',
+                "8992222222222", "1", "Rina", "MOD Rina", "Kedaluwarsa",
+            ],
+        )
+
+    def test_void_nomor_urut_berurutan_dari_satu(self):
+        _, _, baris = self.ambil_csv("inventory:export_void")
+
+        self.assertEqual(baris[1][0], "1")
+        self.assertEqual(baris[2][0], "2")
+
+    def test_void_tidak_mengikuti_filter_daftar(self):
+        # parameter filter/search daftar tidak boleh memengaruhi export
+        response = self.client.get(
+            reverse("inventory:export_void"),
+            {"q": "Siti", "jenis": "RETURN", "waktu": "hari-ini"},
+        )
+        baris = list(csv.reader(StringIO(response.content.decode("utf-8-sig"))))
+
+        self.assertEqual(len(baris), 3)  # seluruh VOID tetap ikut
+
+    # --- Export Return ---------------------------------------------------
+
+    def test_return_status_dan_content_type(self):
+        response, _, _ = self.ambil_csv("inventory:export_return")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
+
+    def test_return_content_disposition_dan_filename(self):
+        response, _, _ = self.ambil_csv("inventory:export_return")
+        hari_ini = timezone.localdate().isoformat()
+
+        disposition = response["Content-Disposition"]
+        self.assertIn("attachment", disposition)
+        self.assertIn(f'filename="laporan-return-{hari_ini}.csv"', disposition)
+
+    def test_return_header_persis(self):
+        _, _, baris = self.ambil_csv("inventory:export_return")
+
+        self.assertEqual(baris[0], HEADER_RETURN_PERSIS)
+
+    def test_return_hanya_berisi_transaksi_return(self):
+        _, teks, baris = self.ambil_csv("inventory:export_return")
+
+        self.assertEqual(len(baris), 3)  # header + 2 data RETURN
+        # penanda khusus data VOID tidak boleh muncul
+        self.assertNotIn("Budi, Santoso", teks)
+        self.assertNotIn("Kedaluwarsa", teks)
+        self.assertNotIn("MOD Rina", teks)
+
+    def test_return_isi_baris_lengkap(self):
+        _, _, baris = self.ambil_csv("inventory:export_return")
+
+        self.assertEqual(
+            baris[1],
+            [
+                "2026-09-26",              # TANGGAL (terbaru dulu)
+                "BT3",                     # OUTLET
+                "Siti, Aminah",            # NAMA KASIR
+                "",                        # NO.TRANS kosong (NULL)
+                'Chitato Sapi "Panggang" 68g',
+                "8992222222222",
+                "3",                       # QTY
+                "12500.00",                # H.JUAL (input manual)
+                "Hadi Kurnia",             # OTORITAS
+                "Rusak berat",             # ALASAN RETURN
+            ],
+        )
+        self.assertEqual(
+            baris[2],
+            [
+                "2026-09-24", "BT7", "Dewi", "TRX-0099",
+                "Indomie Goreng 85g", "8991111111111", "1",
+                "9999.50", "Hadi Kurnia", 'Salah kirim, "cek lagi"',
+            ],
+        )
+
+    # --- Korrectness CSV -------------------------------------------------
+
+    def test_koma_dalam_nilai_tetap_satu_kolom(self):
+        _, _, baris_void = self.ambil_csv("inventory:export_void")
+        _, _, baris_return = self.ambil_csv("inventory:export_return")
+
+        # setiap baris harus selebar header (koma tidak memecah kolom)
+        for baris in baris_void:
+            self.assertEqual(len(baris), len(HEADER_VOID_PERSIS))
+        for baris in baris_return:
+            self.assertEqual(len(baris), len(HEADER_RETURN_PERSIS))
+
+        # nilai "Budi, Santoso" utuh sebagai satu sel
+        self.assertEqual(baris_void[1][6], "Budi, Santoso")
+        self.assertEqual(baris_return[1][2], "Siti, Aminah")
+
+    def test_tanda_kutip_di_escape_dengan_benar(self):
+        response, teks, baris = self.ambil_csv("inventory:export_void")
+
+        # csv.writer menggandakan kutip di dalam field berquote
+        self.assertIn('""ganda""', teks)
+        # setelah dibaca ulang, nilai kembali persis seperti aslinya
+        self.assertEqual(
+            baris[1][8], 'Salah pindai, "ganda" — komplain ñiño'
+        )
+        # nama produk berkutip juga ikut ter-escape & terbaca benar
+        self.assertEqual(baris[2][3], 'Chitato Sapi "Panggang" 68g')
+
+    def test_nilai_kosong_tidak_merusak_format(self):
+        _, _, baris = self.ambil_csv("inventory:export_return")
+
+        # no_trans NULL -> sel kosong, jumlah kolom tetap utuh
+        self.assertEqual(baris[1][3], "")
+        self.assertEqual(len(baris[1]), len(HEADER_RETURN_PERSIS))
+
+    def test_karakter_utf8_benar_dengan_bom(self):
+        response, teks, baris = self.ambil_csv("inventory:export_void")
+
+        # diawali UTF-8 BOM (setara utf-8-sig) untuk Excel
+        self.assertTrue(response.content.startswith(b"\xef\xbb\xbf"))
+        # karakter non-ASCII terbaca utuh setelah decode utf-8-sig
+        self.assertIn("ñiño", teks)
+        self.assertIn("—", teks)
+        self.assertIn("ñiño", baris[1][8])
+
+    # --- Template --------------------------------------------------------
+
+    def test_daftar_menampilkan_tombol_export_void(self):
+        response = self.client.get(reverse("inventory:daftar"))
+
+        self.assertContains(response, f'href="{reverse("inventory:export_void")}"')
+        self.assertContains(response, "Export Void")
+
+    def test_daftar_menampilkan_tombol_export_return(self):
+        response = self.client.get(reverse("inventory:daftar"))
+
+        self.assertContains(
+            response, f'href="{reverse("inventory:export_return")}"'
+        )
+        self.assertContains(response, "Export Return")
+        # placeholder tombol tanpa aksi sudah tidak ada
+        self.assertNotContains(
+            response, 'type="button" class="flex-1 sm:flex-none'
+        )
+
+
+class ExportKosongTests(TestCase):
+    """Export tanpa data tetap menghasilkan CSV valid berisi header (Phase 3.5)."""
+
+    def test_export_void_kosong_hanya_header(self):
+        response = self.client.get(reverse("inventory:export_void"))
+        baris = list(
+            csv.reader(StringIO(response.content.decode("utf-8-sig")))
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
+        self.assertEqual(baris, [HEADER_VOID_PERSIS])
+
+    def test_export_return_kosong_hanya_header(self):
+        response = self.client.get(reverse("inventory:export_return"))
+        baris = list(
+            csv.reader(StringIO(response.content.decode("utf-8-sig")))
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
+        self.assertEqual(baris, [HEADER_RETURN_PERSIS])
