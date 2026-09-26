@@ -88,9 +88,9 @@ class VoidReturn(models.Model):
                                 models.CheckConstraint(condition=models.Q(jenis__in=["VOID", "RETURN"]), name="voidreturn_jenis_valid"),
                                 models.CheckConstraint(condition=models.Q(outlet__in=OUTLET_VALUES),     name="voidreturn_outlet_valid",),
                                 models.CheckConstraint(condition=~models.Q(jenis="RETURN") | models.Q(harga_jual__isnull=False), name="voidreturn_return_harga_wajib",),
-                                models.CheckConstraint(condition=models.Q(jenis="VOID")&(models.Q(no_trans__isnull=True) | models.Q(no_trans=""))&models.Q(harga_jual__isnull=True),name="voidreturn_void_kosong",),
-                                models.CheckConstraint(condition=~models.Q(foto=""), name="voidreturn_foto_wajib"),
-                            ],
+                                models.CheckConstraint(condition=~models.Q(jenis="VOID") | ((models.Q(no_trans__isnull=True) | models.Q(no_trans="")) & models.Q(harga_jual__isnull=True)),name="voidreturn_void_kosong",),
+                                models.CheckConstraint(condition=~models.Q(foto=""), name="voidreturn_foto_wajib")
+                            ]
         indexes             = [
                                 models.Index(fields=["jenis", "tanggal"], name="voidreturn_jenis_tanggal_idx"),
                             ]
