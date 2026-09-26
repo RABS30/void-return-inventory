@@ -1,20 +1,30 @@
-"""Test form transaksi Void/Return (Phase: Forms & Validation).
+"""Test form transaksi Void/Return (Phase 3.1) dan Create View (Phase 3.2).
 
 Fixtures dibuat sendiri — tidak bergantung pada Master Barang produksi
 (17.257 record). Foto dibuat via Pillow: PNG kecil, BMP valid > 5 MB,
 dan file non-gambar.
+
+Foto yang tersimpan lewat Create View ditulis ke folder media sementara
+(MEDIA_ROOT dipindah selama test) supaya tidak mengotori folder media/
+project.
 """
 
+import os
+import shutil
+import tempfile
 from decimal import Decimal
 from io import BytesIO
 
+from django.core.files.storage import default_storage, storages
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.test import Client, TestCase, override_settings
+from django.urls import reverse
 from django.utils import timezone
+from django.utils.functional import empty
 from PIL import Image
 
 from inventory.forms import VoidReturnForm
-from inventory.models import Barang
+from inventory.models import Barang, VoidReturn
 
 
 def foto_kecil():
@@ -266,3 +276,173 @@ class VoidReturnFormTests(TestCase):
 
         kosong = VoidReturnForm()
         self.assertEqual(kosong.fields["tanggal"].initial, timezone.localdate())
+
+
+def _reset_storage():
+    """Reset cache storage.
+
+    Django tidak punya signal reset untuk MEDIA_ROOT (hanya STORAGES/
+    STATIC_*), sehingga override_settings(MEDIA_ROOT) perlu dibantu
+    mengosongkan cache instance storage agar path baru terbaca.
+    """
+    storages._storages = {}
+    default_storage._wrapped = empty
+
+
+class InputViewTests(TestCase):
+    """Test Create View GET/POST /input (Phase 3.2)."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.barang = Barang.objects.create(
+            kode="VIEW001",
+            nama="Produk View Tes",
+            barcode_aktif="8991111111111",
+            isi=1,
+            h_jual=Decimal("10000.00"),
+            qty_bad_stock=0,
+            qty_akhir=0,
+            qty_gd=0,
+            sat_k="",
+            sat_b="",
+            pareto="SM",
+            jenis="BKP",
+        )
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        _dir = os.path.join(tempfile.gettempdir(), "opencode")
+        cls.media_dir = tempfile.mkdtemp(
+            prefix="voidreturn_test_media_", dir=_dir if os.path.isdir(_dir) else None
+        )
+        cls._media_override = override_settings(MEDIA_ROOT=cls.media_dir)
+        cls._media_override.enable()
+        _reset_storage()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._media_override.disable()
+        _reset_storage()
+        shutil.rmtree(cls.media_dir, ignore_errors=True)
+        super().tearDownClass()
+
+    def data_void(self, **ubah):
+        data = {
+            "jenis": "VOID",
+            "tanggal": timezone.localdate().isoformat(),
+            "outlet": "BT2",
+            "nama_kasir": "Sari",
+            "otoritas": "Rudi",
+            "barcode": "8991111111111",
+            "quantity": "2",
+            "alasan": "Barang rusak",
+            "foto": foto_kecil(),
+        }
+        data.update(ubah)
+        return data
+
+    def data_return(self, **ubah):
+        data = {
+            "jenis": "RETURN",
+            "tanggal": timezone.localdate().isoformat(),
+            "outlet": "BT7",
+            "nama_kasir": "Dewi",
+            "otoritas": "Lina",
+            "no_trans": "",
+            "barcode": "8991111111111",
+            "quantity": "1",
+            "harga_jual": "15000.50",
+            "alasan": "Salah kirim",
+            "foto": foto_kecil(),
+        }
+        data.update(ubah)
+        return data
+
+    def test_get_input_menampilkan_form(self):
+        response = self.client.get(reverse("inventory:input"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "input.html")
+        self.assertIn("form", response.context)
+        self.assertIsInstance(response.context["form"], VoidReturnForm)
+        self.assertFalse(response.context["form"].is_bound)
+
+    def test_post_void_valid_tersimpan_dan_redirect(self):
+        response = self.client.post(reverse("inventory:input"), self.data_void())
+
+        self.assertEqual(response.status_code, 302)
+        self.assertRedirects(response, reverse("inventory:input"))
+
+        self.assertEqual(VoidReturn.objects.count(), 1)
+        transaksi = VoidReturn.objects.get()
+        self.assertEqual(transaksi.jenis, VoidReturn.JENIS_VOID)
+        self.assertEqual(transaksi.barang, self.barang)
+        self.assertEqual(transaksi.outlet, "BT2")
+        self.assertEqual(transaksi.nama_kasir, "Sari")
+        self.assertEqual(transaksi.quantity, 2)
+        # VOID: H. Jual dan No. Trans harus NULL
+        self.assertIsNone(transaksi.harga_jual)
+        self.assertIsNone(transaksi.no_trans)
+
+    def test_post_return_valid_tersimpan_dan_redirect(self):
+        response = self.client.post(
+            reverse("inventory:input"), self.data_return(), follow=True
+        )
+
+        # POST -> save -> redirect (bukan render langsung)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.redirect_chain), 1)
+        self.assertEqual(response.redirect_chain[0][1], 302)
+        self.assertEqual(response.redirect_chain[0][0], reverse("inventory:input"))
+
+        self.assertEqual(VoidReturn.objects.count(), 1)
+        transaksi = VoidReturn.objects.get()
+        self.assertEqual(transaksi.jenis, VoidReturn.JENIS_RETURN)
+        self.assertEqual(transaksi.barang, self.barang)
+        self.assertEqual(transaksi.harga_jual, Decimal("15000.50"))
+        self.assertIsNone(transaksi.no_trans)  # "" -> NULL
+
+        # success message tampil di halaman tujuan
+        self.assertContains(response, "Transaksi Return berhasil disimpan.")
+
+    def test_post_invalid_tidak_membuat_record(self):
+        data = self.data_void(barcode="0000000000000")  # tidak ada di master
+        response = self.client.post(reverse("inventory:input"), data)
+
+        self.assertEqual(response.status_code, 200)  # bukan redirect
+        self.assertTemplateUsed(response, "input.html")
+        self.assertEqual(VoidReturn.objects.count(), 0)
+
+        form = response.context["form"]
+        self.assertTrue(form.is_bound)
+        self.assertIn("barcode", form.errors)
+        # data input tetap dipertahankan saat render ulang
+        self.assertEqual(form.data["nama_kasir"], "Sari")
+        self.assertEqual(form.data["outlet"], "BT2")
+
+    def test_foto_diterima_multipart_dan_tersimpan(self):
+        response = self.client.post(reverse("inventory:input"), self.data_void())
+        self.assertEqual(response.status_code, 302)
+
+        transaksi = VoidReturn.objects.get()
+        self.assertTrue(transaksi.foto)  # request.FILES diterima view
+        self.assertTrue(transaksi.foto.name.startswith("foto/"))
+        self.assertTrue(transaksi.foto.path.startswith(self.media_dir))
+        self.assertTrue(os.path.exists(transaksi.foto.path))  # file nyata di disk
+
+    def test_success_message_void_tampil(self):
+        response = self.client.post(
+            reverse("inventory:input"), self.data_void(), follow=True
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Transaksi Void berhasil disimpan.")
+        self.assertEqual(VoidReturn.objects.count(), 1)
+
+    def test_csrf_aktif_menolak_post_tanpa_token(self):
+        client = Client(enforce_csrf_checks=True)
+        response = client.post(reverse("inventory:input"), self.data_void())
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(VoidReturn.objects.count(), 0)
